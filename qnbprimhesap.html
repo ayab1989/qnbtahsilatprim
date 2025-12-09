@@ -1,469 +1,214 @@
-import React, { useState, useEffect } from 'react';
-import { Calculator, Printer, Leaf, Calendar, UserCircle, Settings, Wallet, AlertCircle, Users, Lock, ArrowRightLeft } from 'lucide-react';
-
-const App = () => {
-  const [activeTab, setActiveTab] = useState('mujde');
-  const [selectedMonth, setSelectedMonth] = useState('Kasım 2025');
-  const [greenMonths, setGreenMonths] = useState(0);
-  
-  // YENİ: Ortak KTVÜ Toplam Tahsilatı (Tek Veri)
-  const [mhTotalCollection, setMhTotalCollection] = useState(0);
-
-  // MİKRO İÇİN TABLO
-  const poolAmountTable = [
-    { min: 250, amount: 51000, percent: 2.50 },
-    { min: 200, amount: 36000, percent: 2.00 },
-    { min: 160, amount: 25500, percent: 1.60 },
-    { min: 150, amount: 21500, percent: 1.50 },
-    { min: 140, amount: 18500, percent: 1.40 },
-    { min: 130, amount: 16000, percent: 1.30 },
-    { min: 120, amount: 14000, percent: 1.20 },
-    { min: 110, amount: 12000, percent: 1.10 },
-    { min: 100, amount: 10000, percent: 1.00 },
-    { min: 90, amount: 8000, percent: 0.90 },
-    { min: 80, amount: 6000, percent: 0.80 },
-    { min: 70, amount: 4000, percent: 0.70 },
-    { min: 55, amount: 2000, percent: 0.55 },
-    { min: 0, amount: 0, percent: 0 },
-  ];
-
-  // Başlangıç Verileri
-  const [allData, setAllData] = useState({
-    mujde: [
-      { id: 1, name: 'Mikro', type: 'mikro', target: 4000000, collection: 0 },
-      { id: 2, name: 'Bireysel', type: 'bireysel', target: 0, collection: 0 },
-      { id: 3, name: 'KTVÜ/MUVU', type: 'mh', target: 0, collection: 0 },
-      { id: 4, name: 'Dava Vekalet', type: 'vekalet', target: 0, collection: 0 },
-    ],
-    armagan: [
-      { id: 1, name: 'Mikro', type: 'mikro', target: 3000000, collection: 0 },
-      { id: 2, name: 'Bireysel', type: 'bireysel', target: 0, collection: 0 },
-      { id: 3, name: 'KTVÜ/MUVU', type: 'mh', target: 0, collection: 0 },
-      { id: 4, name: 'Dava Vekalet', type: 'vekalet', target: 0, collection: 0 },
-    ]
-  });
-
-  const months = [
-    'Ocak 2025', 'Şubat 2025', 'Mart 2025', 'Nisan 2025', 'Mayıs 2025', 'Haziran 2025',
-    'Temmuz 2025', 'Ağustos 2025', 'Eylül 2025', 'Ekim 2025', 'Kasım 2025', 'Aralık 2025'
-  ];
-
-  // Aktif sekmedeki verileri al
-  const inputs = allData[activeTab];
-
-  // Normal Input Handler (Mikro, Bireysel, Vekalet için)
-  const handleInputChange = (id, field, value) => {
-    setAllData(prev => ({
-      ...prev,
-      [activeTab]: prev[activeTab].map(item => {
-        if (item.id === id) {
-          return { ...item, [field]: parseFloat(value) || 0 };
-        }
-        return item;
-      })
-    }));
-  };
-
-  // MİKRO HESABI (Referans için)
-  const calculateMikroStats = () => {
-    const mikroRow = inputs.find(r => r.type === 'mikro');
-    if (!mikroRow) return { rate: 0, realization: 0 };
-
-    const realization = mikroRow.target > 0 ? mikroRow.collection / mikroRow.target : 0;
-    const realPercent = realization * 100;
-    const band = poolAmountTable.find(r => realPercent >= r.min) || { amount: 0, percent: 1 };
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prim Hesaplama Çizelgesi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    let rate = 0;
-    if (mikroRow.target > 0 && band.percent > 0) {
-      rate = band.amount / (mikroRow.target * band.percent);
-    }
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    return { rate, realization: realPercent };
-  };
-
-  // KTVÜ HAVUZ HESAPLAMASI (HİBRİT MODEL - TEK GİRİŞ)
-  // Havuz Tutarı = Girilen Tek Toplam Tahsilat * %2
-  // Dağıtım Puanı = MİKRO Gerçekleşme Yüzdesi
-  const calculateMhPool = () => {
-    
-    // 1. Toplam Havuz (%2)
-    // Artık mhTotalCollection state'inden geliyor
-    const poolAmount = mhTotalCollection * 0.02; 
-
-    // 2. MİKRO Gerçekleşme Oranlarını Al (Dağıtım için)
-    const mikroRowM = allData.mujde.find(r => r.type === 'mikro');
-    const mikroRowA = allData.armagan.find(r => r.type === 'mikro');
-
-    const scoreM = (mikroRowM?.target > 0) ? (mikroRowM.collection / mikroRowM.target) * 100 : 0;
-    const scoreA = (mikroRowA?.target > 0) ? (mikroRowA.collection / mikroRowA.target) * 100 : 0;
-    
-    const totalScore = scoreM + scoreA;
-
-    return {
-      poolAmount,
-      totalScore,
-      scoreM,
-      scoreA
-    };
-  };
-
-  const mikroStats = calculateMikroStats();
-  const mhStats = calculateMhPool();
-
-  const calculateRow = (row) => {
-    let realization = 0;
-    let rate = 0;
-    let premium = 0;
-    let note = "";
-
-    // MİKRO HESABI
-    if (row.type === 'mikro') {
-      realization = row.target > 0 ? row.collection / row.target : 0;
-      rate = mikroStats.rate; 
-      premium = row.collection * rate;
-    
-    // KTVÜ/MUVU HESABI (YENİ TEK GİRİŞLİ SİSTEM)
-    } else if (row.type === 'mh') {
-      realization = 0; 
-      
-      const isMujde = activeTab === 'mujde';
-      const myMikroScore = isMujde ? mhStats.scoreM : mhStats.scoreA;
-
-      // Pay hesabı: (Benim MİKRO Puanım / Toplam MİKRO Puan) * KTVÜ Havuzu
-      if (mhStats.totalScore > 0) {
-        premium = (myMikroScore / mhStats.totalScore) * mhStats.poolAmount;
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0"
       }
-
-      // Oran hesaplaması (Tabloda göstermek için - Toplam Tahsilat üzerinden efektif oran)
-      if (mhTotalCollection > 0) {
-        rate = premium / mhTotalCollection;
-      }
-      
-      note = "";
-
-    // DİĞERLERİ
-    } else if (row.type === 'bireysel') {
-      rate = 0.0025;
-      realization = 0;
-      premium = row.collection * rate;
-    } else {
-      rate = 0.01;
-      realization = 0;
-      premium = row.collection * rate;
     }
+    </script>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
 
-    return {
-      realization: realization * 100,
-      rate: rate,
-      premium: premium,
-      note: note
-    };
-  };
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Calculator, Printer, Leaf, Calendar, UserCircle, Settings, Wallet, AlertCircle, Users, Lock, ArrowRightLeft } from 'lucide-react';
 
-  const baseTotalPremium = inputs.reduce((sum, item) => sum + calculateRow(item).premium, 0);
-  const vintageRate = greenMonths * 0.05;
-  const vintageAmount = baseTotalPremium * vintageRate;
-  const grandTotal = baseTotalPremium + vintageAmount;
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('mujde');
+            const [selectedMonth, setSelectedMonth] = useState('Kasım 2025');
+            const [greenMonths, setGreenMonths] = useState(0);
+            const [mhTotalCollection, setMhTotalCollection] = useState(0);
 
-  const formatCurrency = (val) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(val);
-  const formatPercent = (val) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(val) + '%';
-  const formatRate = (val) => val.toFixed(7); 
+            const poolAmountTable = [
+                { min: 250, amount: 51000, percent: 2.50 }, { min: 200, amount: 36000, percent: 2.00 },
+                { min: 160, amount: 25500, percent: 1.60 }, { min: 150, amount: 21500, percent: 1.50 },
+                { min: 140, amount: 18500, percent: 1.40 }, { min: 130, amount: 16000, percent: 1.30 },
+                { min: 120, amount: 14000, percent: 1.20 }, { min: 110, amount: 12000, percent: 1.10 },
+                { min: 100, amount: 10000, percent: 1.00 }, { min: 90, amount: 8000, percent: 0.90 },
+                { min: 80, amount: 6000, percent: 0.80 }, { min: 70, amount: 4000, percent: 0.70 },
+                { min: 55, amount: 2000, percent: 0.55 }, { min: 0, amount: 0, percent: 0 },
+            ];
 
-  const handlePrint = () => {
-    window.print();
-  };
+            const [allData, setAllData] = useState({
+                mujde: [
+                { id: 1, name: 'Mikro', type: 'mikro', target: 4000000, collection: 0 },
+                { id: 2, name: 'Bireysel', type: 'bireysel', target: 0, collection: 0 },
+                { id: 3, name: 'KTVÜ/MUVU', type: 'mh', target: 0, collection: 0 },
+                { id: 4, name: 'Dava Vekalet', type: 'vekalet', target: 0, collection: 0 },
+                ],
+                armagan: [
+                { id: 1, name: 'Mikro', type: 'mikro', target: 3000000, collection: 0 },
+                { id: 2, name: 'Bireysel', type: 'bireysel', target: 0, collection: 0 },
+                { id: 3, name: 'KTVÜ/MUVU', type: 'mh', target: 0, collection: 0 },
+                { id: 4, name: 'Dava Vekalet', type: 'vekalet', target: 0, collection: 0 },
+                ]
+            });
 
-  const currentPersonName = activeTab === 'mujde' ? 'Müjde Keçeci' : 'Armağan Caner';
+            const months = ['Ocak 2025', 'Şubat 2025', 'Mart 2025', 'Nisan 2025', 'Mayıs 2025', 'Haziran 2025', 'Temmuz 2025', 'Ağustos 2025', 'Eylül 2025', 'Ekim 2025', 'Kasım 2025', 'Aralık 2025'];
+            const inputs = allData[activeTab];
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-slate-800 print:bg-white print:p-0">
-      
-      {/* Print Styles */}
-      <style>{`
-        @media print {
-          @page { size: landscape; margin: 1cm; }
-          body { -webkit-print-color-adjust: exact; }
-          .no-print { display: none !important; }
-          .print-full-width { width: 100% !important; max-width: none !important; }
-          input { 
-            border: none !important; 
-            background: transparent !important; 
-            padding: 0 !important;
-            margin: 0 !important;
-            text-align: right;
-            width: auto !important;
-            font-weight: bold;
-            color: black !important;
-          }
-          .shadow-lg, .shadow-xl, .shadow-sm { box-shadow: none !important; }
-          .bg-slate-900 { background-color: #f1f5f9 !important; color: black !important; border: 2px solid #000 !important; }
-          .text-white { color: black !important; }
-          .bg-white { background-color: white !important; }
-        }
-      `}</style>
+            const handleInputChange = (id, field, value) => {
+                setAllData(prev => ({
+                ...prev, [activeTab]: prev[activeTab].map(item => {
+                    if (item.id === id) return { ...item, [field]: parseFloat(value) || 0 };
+                    return item;
+                })
+                }));
+            };
 
-      <div className="max-w-6xl mx-auto print-full-width flex flex-col min-h-[80vh]">
-        
-        {/* REPORT HEADER */}
-        <div className="mb-6 bg-white p-8 rounded-xl shadow-sm border border-slate-200 print:border-none print:p-0 print:mb-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Calculator className="text-blue-600 print:text-black" size={28} />
-                <h1 className="text-3xl font-bold text-slate-900 print:text-black">Prim Hesaplama Çizelgesi</h1>
-              </div>
-              <div className="flex gap-6 mt-2 text-sm text-slate-500 font-medium uppercase tracking-wide print:text-black">
-                <div className="flex items-center gap-1">
-                  <Calendar size={16} />
-                  <span>{selectedMonth}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <UserCircle size={16} />
-                  <span className="text-blue-600 print:text-black font-bold">{currentPersonName}</span>
-                </div>
-              </div>
-            </div>
-            <div className="hidden print:block text-right">
-              <p className="text-xs text-slate-400">Rapor Tarihi: {new Date().toLocaleDateString('tr-TR')}</p>
-            </div>
-          </div>
-        </div>
+            const calculateMikroStats = () => {
+                const mikroRow = inputs.find(r => r.type === 'mikro');
+                if (!mikroRow) return { rate: 0, realization: 0 };
+                const realization = mikroRow.target > 0 ? mikroRow.collection / mikroRow.target : 0;
+                const realPercent = realization * 100;
+                const band = poolAmountTable.find(r => realPercent >= r.min) || { amount: 0, percent: 1 };
+                let rate = 0;
+                if (mikroRow.target > 0 && band.percent > 0) rate = band.amount / (mikroRow.target * band.percent);
+                return { rate, realization: realPercent };
+            };
 
-        {/* MAIN TABLE */}
-        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden mb-6 print:border-b-2 print:border-t-2 print:border-slate-800 print:rounded-none">
-          <div className={`h-2 w-full no-print ${activeTab === 'mujde' ? 'bg-blue-600' : 'bg-purple-600'}`}></div>
-          
-          <div className="p-6 overflow-x-auto print:p-2">
-            <table className="w-full min-w-[800px] print:min-w-0">
-              <thead>
-                <tr className="border-b-2 border-slate-100 print:border-slate-800">
-                  <th className="text-left py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Kategori</th>
-                  <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Hedef (TL)</th>
-                  <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Tahsilat (TL)</th>
-                  <th className="text-center py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Gerçekleşme</th>
-                  <th className="text-center py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">
-                    Oran<br/>
-                    <span className="text-[10px] opacity-75 font-normal lowercase">(Tutar / Hedef)</span>
-                  </th>
-                  <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Tutar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 print:divide-slate-200">
-                {inputs.map((row) => {
-                  const result = calculateRow(row);
-                  const isAchieved = result.realization >= 100;
-                  
-                  return (
-                    <tr key={row.id} className="hover:bg-slate-50 transition-colors print:hover:bg-transparent">
-                      <td className="py-4 px-4">
-                        <span className="font-bold text-slate-700 print:text-black text-sm">{row.name}</span>
-                        {/* KTVÜ Notu */}
-                        {row.type === 'mh' && (
-                           <div className="text-[10px] text-blue-600 mt-0.5 print:text-slate-600">
-                             {result.note}
-                           </div>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        {/* Sadece MİKRO için hedef girişi açık */}
-                        {(row.type === 'mikro') ? (
-                          <input
-                            type="number"
-                            value={row.target}
-                            onChange={(e) => handleInputChange(row.id, 'target', e.target.value)}
-                            className="w-full text-right bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-700 print:text-black print:font-bold"
-                          />
-                        ) : (
-                          <span className="text-slate-300 flex justify-end items-center gap-1 print:hidden">
-                             -
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        {/* KTVÜ için tablo içinde giriş KAPALI (Ortak alandan gelir) */}
-                        {row.type === 'mh' ? (
-                           <span className="font-mono font-bold text-slate-800" title="Ortak alandan girilen toplam tahsilat">
-                             {formatCurrency(mhTotalCollection)}
-                           </span>
-                        ) : (
-                          <input
-                            type="number"
-                            placeholder="0"
-                            value={row.collection || ''}
-                            onChange={(e) => handleInputChange(row.id, 'collection', e.target.value)}
-                            className="w-full text-right bg-white border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 font-bold text-slate-800 shadow-sm print:text-black print:border-none"
-                          />
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        {/* Sadece MİKRO için gerçekleşme göstergesi */}
-                        {(row.type === 'mikro') ? (
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium print:bg-transparent print:text-black print:p-0 ${
-                            isAchieved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {formatPercent(result.realization)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300 text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-center font-mono text-sm text-slate-500 print:text-black">
-                        {formatRate(result.rate)}
-                      </td>
-                      <td className="py-4 px-4 text-right">
-                        <span className="font-bold text-slate-800 text-lg print:text-black">
-                          {formatCurrency(result.premium)}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            const calculateMhPool = () => {
+                const poolAmount = mhTotalCollection * 0.02; 
+                const mikroRowM = allData.mujde.find(r => r.type === 'mikro');
+                const mikroRowA = allData.armagan.find(r => r.type === 'mikro');
+                const scoreM = (mikroRowM?.target > 0) ? (mikroRowM.collection / mikroRowM.target) * 100 : 0;
+                const scoreA = (mikroRowA?.target > 0) ? (mikroRowA.collection / mikroRowA.target) * 100 : 0;
+                return { poolAmount, totalScore: scoreM + scoreA, scoreM, scoreA };
+            };
 
-        {/* VINTAGE & TOTALS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-2 print:gap-8">
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-6 print:bg-white print:border-2 print:border-slate-200 print:p-4">
-                <h3 className="text-emerald-900 font-bold mb-4 flex items-center gap-2 print:text-black text-sm uppercase tracking-wide">
-                    <Leaf size={16} className="text-emerald-600 print:text-black" />
-                    Vintage Özel Primi (3+1)
-                </h3>
-                <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                        <label className="block text-xs font-medium text-emerald-700 mb-1 print:text-slate-600">
-                           Yeşil Ay Sayısı
-                        </label>
-                        <select 
-                            value={greenMonths}
-                            onChange={(e) => setGreenMonths(Number(e.target.value))}
-                            className="w-full p-2 border border-emerald-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm print:appearance-none print:border-none print:p-0 print:font-bold print:text-right"
-                        >
-                            <option value={0}>0 Ay</option>
-                            <option value={1}>1 Ay (%5)</option>
-                            <option value={2}>2 Ay (%10)</option>
-                            <option value={3}>3 Ay (%15)</option>
-                            <option value={4}>4 Ay (%20)</option>
-                        </select>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-emerald-600 print:text-slate-500">Ekstra</p>
-                        <p className="text-xl font-bold text-emerald-800 print:text-black">+{formatPercent(vintageRate * 100)}</p>
+            const mikroStats = calculateMikroStats();
+            const mhStats = calculateMhPool();
+
+            const calculateRow = (row) => {
+                let realization = 0, rate = 0, premium = 0, note = "";
+                if (row.type === 'mikro') {
+                    realization = row.target > 0 ? row.collection / row.target : 0;
+                    rate = mikroStats.rate; premium = row.collection * rate;
+                } else if (row.type === 'mh') {
+                    const isMujde = activeTab === 'mujde';
+                    const myMikroScore = isMujde ? mhStats.scoreM : mhStats.scoreA;
+                    if (mhStats.totalScore > 0) premium = (myMikroScore / mhStats.totalScore) * mhStats.poolAmount;
+                    if (mhTotalCollection > 0) rate = premium / mhTotalCollection;
+                } else if (row.type === 'bireysel') {
+                    rate = 0.0025; premium = row.collection * rate;
+                } else {
+                    rate = 0.01; premium = row.collection * rate;
+                }
+                return { realization: realization * 100, rate, premium, note };
+            };
+
+            const baseTotalPremium = inputs.reduce((sum, item) => sum + calculateRow(item).premium, 0);
+            const vintageRate = greenMonths * 0.05;
+            const vintageAmount = baseTotalPremium * vintageRate;
+            const grandTotal = baseTotalPremium + vintageAmount;
+
+            const formatCurrency = (val) => new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(val);
+            const formatPercent = (val) => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(val) + '%';
+            const formatRate = (val) => val.toFixed(7); 
+            const handlePrint = () => window.print();
+            const currentPersonName = activeTab === 'mujde' ? 'Müjde Keçeci' : 'Armağan Caner';
+
+            return (
+                <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-slate-800 print:bg-white print:p-0">
+                    <style>{`@media print { @page { size: landscape; margin: 1cm; } body { -webkit-print-color-adjust: exact; } .no-print { display: none !important; } .print-full-width { width: 100% !important; max-width: none !important; } input { border: none !important; background: transparent !important; padding: 0 !important; margin: 0 !important; text-align: right; width: auto !important; font-weight: bold; color: black !important; } .shadow-lg, .shadow-xl, .shadow-sm { box-shadow: none !important; } .bg-slate-900 { background-color: #f1f5f9 !important; color: black !important; border: 2px solid #000 !important; } .text-white { color: black !important; } .bg-white { background-color: white !important; } }`}</style>
+                    <div className="max-w-6xl mx-auto print-full-width flex flex-col min-h-[80vh]">
+                        <div className="mb-6 bg-white p-8 rounded-xl shadow-sm border border-slate-200 print:border-none print:p-0 print:mb-4">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
+                            <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <Calculator className="text-blue-600 print:text-black" size={28} />
+                                <h1 className="text-3xl font-bold text-slate-900 print:text-black">Prim Hesaplama Çizelgesi</h1>
+                            </div>
+                            <div className="flex gap-6 mt-2 text-sm text-slate-500 font-medium uppercase tracking-wide print:text-black">
+                                <div className="flex items-center gap-1"><Calendar size={16} /><span>{selectedMonth}</span></div>
+                                <div className="flex items-center gap-1"><UserCircle size={16} /><span className="text-blue-600 print:text-black font-bold">{currentPersonName}</span></div>
+                            </div>
+                            </div>
+                            <div className="hidden print:block text-right"><p className="text-xs text-slate-400">Rapor Tarihi: {new Date().toLocaleDateString('tr-TR')}</p></div>
+                        </div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden mb-6 print:border-b-2 print:border-t-2 print:border-slate-800 print:rounded-none">
+                        <div className={`h-2 w-full no-print ${activeTab === 'mujde' ? 'bg-blue-600' : 'bg-purple-600'}`}></div>
+                        <div className="p-6 overflow-x-auto print:p-2">
+                            <table className="w-full min-w-[800px] print:min-w-0">
+                            <thead>
+                                <tr className="border-b-2 border-slate-100 print:border-slate-800">
+                                <th className="text-left py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Kategori</th>
+                                <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Hedef (TL)</th>
+                                <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Tahsilat (TL)</th>
+                                <th className="text-center py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Gerçekleşme</th>
+                                <th className="text-center py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Oran</th>
+                                <th className="text-right py-4 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider w-1/6 print:text-black">Tutar</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 print:divide-slate-200">
+                                {inputs.map((row) => {
+                                const result = calculateRow(row);
+                                const isAchieved = result.realization >= 100;
+                                return (
+                                    <tr key={row.id} className="hover:bg-slate-50 transition-colors print:hover:bg-transparent">
+                                    <td className="py-4 px-4"><span className="font-bold text-slate-700 print:text-black text-sm">{row.name}</span>{row.type === 'mh' && (<div className="text-[10px] text-blue-600 mt-0.5 print:text-slate-600">{result.note}</div>)}</td>
+                                    <td className="py-4 px-4 text-right">{(row.type === 'mikro') ? (<input type="number" value={row.target} onChange={(e) => handleInputChange(row.id, 'target', e.target.value)} className="w-full text-right bg-slate-50 border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-700 print:text-black print:font-bold"/>) : (<span className="text-slate-300 flex justify-end items-center gap-1 print:hidden">-</span>)}</td>
+                                    <td className="py-4 px-4 text-right">{row.type === 'mh' ? (<span className="font-mono font-bold text-slate-800">{formatCurrency(mhTotalCollection)}</span>) : (<input type="number" placeholder="0" value={row.collection || ''} onChange={(e) => handleInputChange(row.id, 'collection', e.target.value)} className="w-full text-right bg-white border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 font-bold text-slate-800 shadow-sm print:text-black print:border-none"/>)}</td>
+                                    <td className="py-4 px-4 text-center">{(row.type === 'mikro') ? (<span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium print:bg-transparent print:text-black print:p-0 ${isAchieved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{formatPercent(result.realization)}</span>) : (<span className="text-slate-300 text-xs">-</span>)}</td>
+                                    <td className="py-4 px-4 text-center font-mono text-sm text-slate-500 print:text-black">{formatRate(result.rate)}</td>
+                                    <td className="py-4 px-4 text-right"><span className="font-bold text-slate-800 text-lg print:text-black">{formatCurrency(result.premium)}</span></td>
+                                    </tr>
+                                );
+                                })}
+                            </tbody>
+                            </table>
+                        </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-2 print:gap-8">
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-6 print:bg-white print:border-2 print:border-slate-200 print:p-4">
+                                <h3 className="text-emerald-900 font-bold mb-4 flex items-center gap-2 print:text-black text-sm uppercase tracking-wide"><Leaf size={16} className="text-emerald-600 print:text-black" />Vintage Özel Primi (3+1)</h3>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex-1"><label className="block text-xs font-medium text-emerald-700 mb-1 print:text-slate-600">Yeşil Ay Sayısı</label><select value={greenMonths} onChange={(e) => setGreenMonths(Number(e.target.value))} className="w-full p-2 border border-emerald-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm print:appearance-none print:border-none print:p-0 print:font-bold print:text-right"><option value={0}>0 Ay</option><option value={1}>1 Ay (%5)</option><option value={2}>2 Ay (%10)</option><option value={3}>3 Ay (%15)</option><option value={4}>4 Ay (%20)</option></select></div>
+                                    <div className="text-right"><p className="text-xs text-emerald-600 print:text-slate-500">Ekstra</p><p className="text-xl font-bold text-emerald-800 print:text-black">+{formatPercent(vintageRate * 100)}</p></div>
+                                </div>
+                            </div>
+                            <div className="bg-slate-900 text-white rounded-xl p-6 shadow-xl flex flex-col justify-between relative overflow-hidden print:bg-white print:text-black print:shadow-none print:border-2 print:border-black print:p-4">
+                                <div className="absolute top-0 right-0 p-4 opacity-10 no-print"><Wallet size={100} /></div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-slate-300 text-sm print:text-slate-600"><span>Ara Toplam (Baz Prim)</span><span className="font-mono">{formatCurrency(baseTotalPremium)}</span></div>
+                                    <div className="flex justify-between items-center text-emerald-400 text-sm print:text-black font-semibold"><span>Vintage Bonusu (+)</span><span className="font-mono">{formatCurrency(vintageAmount)}</span></div>
+                                    <div className="h-px bg-slate-700 my-3 print:bg-black"></div>
+                                    <div className="flex justify-between items-end"><p className="text-slate-400 text-xs font-medium uppercase print:text-slate-600 mb-1">Toplam Hakediş</p><h2 className="text-4xl font-bold tracking-tight text-white print:text-black">{formatCurrency(grandTotal)}</h2></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex-grow"></div>
+                        <div className="mt-12 no-print">
+                        <div className="bg-slate-100 border border-slate-200 rounded-xl p-6">
+                            <h3 className="text-slate-900 font-bold mb-4 flex items-center gap-2"><Settings size={20} className="text-slate-500" />Ayarlar ve Veri Girişi</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Personel</label><div className="relative"><select value={activeTab} onChange={(e) => setActiveTab(e.target.value)} className="block w-full rounded-lg border-slate-300 bg-white py-3 pl-3 pr-10 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm shadow-sm"><option value="mujde">Müjde Keçeci</option><option value="armagan">Armağan Caner</option></select></div></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-2">Dönem</label><select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="block w-full rounded-lg border-slate-300 bg-white py-3 pl-3 pr-10 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm shadow-sm">{months.map(m => (<option key={m} value={m}>{m}</option>))}</select></div>
+                            <div className="col-span-2 bg-blue-50 p-4 rounded-lg border border-blue-200"><label className="block text-xs font-bold text-blue-800 uppercase mb-3 flex items-center gap-2"><ArrowRightLeft size={14} />KTVÜ/MUVU Ortak Havuz Girişi</label><div className="flex gap-4 items-end"><div className="flex-1"><span className="text-[10px] text-blue-600 font-bold block mb-1">Toplam KTVÜ Tahsilatı (Herkes İçin)</span><input type="number" placeholder="0" value={mhTotalCollection || ''} onChange={(e) => setMhTotalCollection(parseFloat(e.target.value) || 0)} className="w-full p-2 border border-blue-300 rounded bg-white text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none font-bold"/></div><div className="mb-2 text-xs text-blue-600 font-medium">Havuz (%2): {formatCurrency(mhTotalCollection * 0.02)}</div></div><div className="mt-2 text-[10px] text-blue-500">* Buraya girilen tek tutar üzerinden %2 havuz oluşur ve personellerin Mikro başarısına göre dağıtılır.</div></div>
+                            <div className="md:col-span-4 mt-2"><button onClick={handlePrint} className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-slate-800 text-white font-semibold rounded-lg hover:bg-slate-700 transition-all shadow-md active:scale-95"><Printer size={20} /><span>Raporu Yazdır / PDF Kaydet</span></button></div>
+                            </div>
+                        </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="bg-slate-900 text-white rounded-xl p-6 shadow-xl flex flex-col justify-between relative overflow-hidden print:bg-white print:text-black print:shadow-none print:border-2 print:border-black print:p-4">
-                <div className="absolute top-0 right-0 p-4 opacity-10 no-print">
-                    <Wallet size={100} />
-                </div>
-                
-                <div className="space-y-2">
-                    <div className="flex justify-between items-center text-slate-300 text-sm print:text-slate-600">
-                        <span>Ara Toplam (Baz Prim)</span>
-                        <span className="font-mono">{formatCurrency(baseTotalPremium)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-emerald-400 text-sm print:text-black font-semibold">
-                        <span>Vintage Bonusu (+)</span>
-                        <span className="font-mono">{formatCurrency(vintageAmount)}</span>
-                    </div>
-                    <div className="h-px bg-slate-700 my-3 print:bg-black"></div>
-                    <div className="flex justify-between items-end">
-                        <p className="text-slate-400 text-xs font-medium uppercase print:text-slate-600 mb-1">Toplam Hakediş</p>
-                        <h2 className="text-4xl font-bold tracking-tight text-white print:text-black">
-                            {formatCurrency(grandTotal)}
-                        </h2>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div className="flex-grow"></div>
-
-        {/* CONTROL PANEL */}
-        <div className="mt-12 no-print">
-          <div className="bg-slate-100 border border-slate-200 rounded-xl p-6">
-            <h3 className="text-slate-900 font-bold mb-4 flex items-center gap-2">
-              <Settings size={20} className="text-slate-500" />
-              Ayarlar ve Veri Girişi
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
-              
-              {/* Personel Seçimi */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Personel</label>
-                <div className="relative">
-                  <select
-                    value={activeTab}
-                    onChange={(e) => setActiveTab(e.target.value)}
-                    className="block w-full rounded-lg border-slate-300 bg-white py-3 pl-3 pr-10 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm shadow-sm"
-                  >
-                    <option value="mujde">Müjde Keçeci</option>
-                    <option value="armagan">Armağan Caner</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Dönem Seçimi */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Dönem</label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="block w-full rounded-lg border-slate-300 bg-white py-3 pl-3 pr-10 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm shadow-sm"
-                >
-                  {months.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* ORTAK KTVÜ GİRİŞ ALANI - TEK INPUT */}
-              <div className="col-span-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
-                 <label className="block text-xs font-bold text-blue-800 uppercase mb-3 flex items-center gap-2">
-                    <ArrowRightLeft size={14} />
-                    KTVÜ/MUVU Ortak Havuz Girişi
-                 </label>
-                 <div className="flex gap-4 items-end">
-                    <div className="flex-1">
-                       <span className="text-[10px] text-blue-600 font-bold block mb-1">Toplam KTVÜ Tahsilatı (Herkes İçin)</span>
-                       <input 
-                          type="number"
-                          placeholder="0"
-                          value={mhTotalCollection || ''}
-                          onChange={(e) => setMhTotalCollection(parseFloat(e.target.value) || 0)}
-                          className="w-full p-2 border border-blue-300 rounded bg-white text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none font-bold"
-                       />
-                    </div>
-                    <div className="mb-2 text-xs text-blue-600 font-medium">
-                       Havuz (%2): {formatCurrency(mhTotalCollection * 0.02)}
-                    </div>
-                 </div>
-                 <div className="mt-2 text-[10px] text-blue-500">
-                    * Buraya girilen tek tutar üzerinden %2 havuz oluşur ve personellerin Mikro başarısına göre dağıtılır.
-                 </div>
-              </div>
-
-              {/* Yazdır Butonu */}
-              <div className="md:col-span-4 mt-2">
-                 <button 
-                    onClick={handlePrint}
-                    className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-slate-800 text-white font-semibold rounded-lg hover:bg-slate-700 transition-all shadow-md active:scale-95"
-                 >
-                    <Printer size={20} />
-                    <span>Raporu Yazdır / PDF Kaydet</span>
-                 </button>
-              </div>
-            </div>
-            
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
-export default App;
+            );
+        };
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
